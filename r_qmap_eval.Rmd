@@ -3,10 +3,10 @@ title: "Bias Correction using qmap"
 author: "Emilio Gozo"
 date: "August 9, 2017"
 output:
+  md_document:
+    toc: no
   html_document:
     theme: united
-  md_document:
-    toc: yes
   pdf_document:
     highlight: zenburn
     toc: yes

@@ -1,8 +1,3 @@
--   [Load the libraries](#load-the-libraries)
--   [Load test data](#load-test-data)
--   [Bias Correction using
-    *QmapQuant*](#bias-correction-using-qmapquant)
-
 This evaluates the capability of the R package
 [*qmap*](https://cran.r-project.org/web/packages/qmap/index.html) to do
 empirical adjustments to the output of a regional climate model
