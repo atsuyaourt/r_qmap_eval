@@ -1,0 +1,137 @@
+---
+title: "Bias Correction using qmap"
+author: "Emilio Gozo"
+date: "August 9, 2017"
+output:
+  html_document:
+    keep_md: yes
+    theme: united
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=6, fig.height=4, echo = T) 
+```
+
+This evaluates the capability of the R package [*qmap*](https://cran.r-project.org/web/packages/qmap/index.html) to do empirical adjustments to the output of a regional climate model simulation. 
+
+### Load the libraries
+```{r load_libs}
+library(qmap)
+library(reshape2)
+library(ggplot2) # for plotting
+library(cowplot)
+```
+
+### Load test data
+The observed data:
+```{r obs_data}
+obs <- read.csv("input/obs_ts.csv")
+```
+The output of the model simulation:
+```{r mod_data}
+mod <- read.csv("input/mod_ts.csv")
+```
+
+```{r summary_table, echo=FALSE}
+a <- data.frame(unclass(summary(obs$val)))
+b <- data.frame(unclass(summary(mod$val)))
+df_summary <- merge(a, b, by="row.names", all.x=TRUE, sort=F)
+names(df_summary) <- c("", "Observed", "Modelled")
+knitr::kable(df_summary, caption="**Table 1.** Summary of values")
+rm(a, b, df_summary)
+```
+
+We see from Table 1 that the modelled result distribution is different from that of the observed.
+
+### Bias Correction using *QmapQuant*
+Non-parametric quantile mapping using empirical quantiles can be done using *fitQmapQUANt* and *doQmapQUANT*. *fitQmapQUANT* estimates the [empirical cumulative distribution function](https://en.wikipedia.org/wiki/Empirical_distribution_function) (ECDF) for both the observed and modelled time series for the specified quantiles. This will then be used by *doQmapQUANT* for bias-correction.
+
+Figure 1 illustrates how the mapping is done. To obtain the bias-corected value:  
+1. Compute the quantiles of the modelled data set (*modq*)  
+2. Compute the quantiles of the observed data set (*fitq*)  
+3. Determine the new value by matching the quantile ranks of *modq* with *fitq* 
+
+As an example, the bias-corrected value of 28.7$^\circ$C is 27.07$^\circ$C because they have the same quantile rank.
+
+```{r fitting}
+fit <- fitQmapQUANT(obs$val, mod$val)
+bc_mod <- doQmapQUANT(mod$val, fit)
+```
+
+```{r plot_quant, echo=FALSE, fig.cap=fig_cap, fig.width=7, fig.height=7}
+quant <- data.frame(fit$par)
+quant$q <- 0:100
+
+gen_segments <- function(ptx, pty, minx, miny) {
+    pts <- data.frame(x = ptx, y= pty)
+    pts$xend <- pts$x
+    pts$yend <- miny
+    pts2 <- pts[c('x', 'y')]
+    pts2$xend <- minx
+    pts2$yend <- pts2$y
+    pts <- rbind(pts,pts2)
+    return(pts)
+}
+
+gen_label <- function(ptx, pty) {
+    paste0("(", round(ptx, 2), ", ", round(pty, 2), ")")
+}
+
+ptq <- c(25, 87)
+
+gg_line_obs <- ggplot(data=quant, aes(fitq, q))
+gg_line_obs <- gg_line_obs + geom_line(col="firebrick", lwd=2)
+pts <- gen_segments(unname(quantile(obs$val, ptq/100)), ptq, miny=0, minx=min(obs$val))
+gg_line_obs <- gg_line_obs + geom_segment(data=pts, aes(x=x, y=y, xend=xend, yend=yend))
+gg_line_obs <- gg_line_obs + geom_point(data=pts, aes(x=x, y=y))
+gg_line_obs <- gg_line_obs + geom_text(data=pts, aes(x=x, y=y, label=gen_label(x, y)), vjust=-1.2,  size=3)
+gg_line_obs <- gg_line_obs + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+gg_line_obs <- gg_line_obs + xlab(expression("Observed Temperature " ( degree~C)))
+gg_line_obs <- gg_line_obs + theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),
+                                   text = element_text(size=12))
+
+
+gg_line_mod <- ggplot(data=quant, aes(q, modq))
+gg_line_mod <- gg_line_mod + geom_line(col="tomato", lwd=2)
+pts <- gen_segments(ptq, unname(quantile(mod$val, ptq/100)), minx=0, miny=min(mod$val))
+gg_line_mod <- gg_line_mod + geom_segment(data=pts, aes(x=x, y=y, xend=xend, yend=yend))
+gg_line_mod <- gg_line_mod + geom_point(data=pts, aes(x=x, y=y))
+gg_line_mod <- gg_line_mod + geom_text(data=pts, aes(x=x, y=y, label=gen_label(x, y)), vjust=-1.2,  size=3)
+gg_line_mod <- gg_line_mod + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+gg_line_mod <- gg_line_mod + ylab(expression("Modelled Temperature " ( degree~C)))
+gg_line_mod <- gg_line_mod + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5),
+                plot.margin = unit(c(0, 0, 0, 0), "cm"),
+                text = element_text(size=12))
+
+gg_scatter <- ggplot(quant, aes(fitq, modq)) + geom_point(col="red", alpha=.8)
+pts <- gen_segments(unname(quantile(obs$val, ptq/100)), unname(quantile(mod$val, ptq/100)), minx=min(obs$val), miny=min(mod$val))
+gg_scatter <- gg_scatter + geom_segment(data=pts, aes(x=x, y=y, xend=xend, yend=yend))
+gg_scatter <- gg_scatter + geom_text(data=pts, aes(x=x, y=y, label=gen_label(x, y)), vjust=-1.2,  size=3)
+gg_scatter <- gg_scatter + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+gg_scatter <- gg_scatter + theme(axis.title=element_blank(),
+				axis.text=element_blank(),
+				plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+fig_cap <- "Figure 1. QQ plot"
+p <- plot_grid(gg_line_mod, gg_scatter, NULL, gg_line_obs, align='hv', labels = c("a", "b", "", "c"), rel_heights=c(5,2), rel_widths=c(2,5))
+p
+```
+
+Table 2 confirms that the result after bias correction has the same distribution as the observed data set.
+
+```{r summary_table2, echo=FALSE}
+a <- data.frame(unclass(summary(obs$val)))
+b <- data.frame(unclass(summary(mod$val)))
+c <- data.frame(unclass(summary(bc_mod)))
+df_summary <- merge(a, b, by="row.names", all.x=TRUE, sort=F)
+row.names(df_summary) <- df_summary$Row.names
+df_summary$Row.names <- NULL
+df_summary <- merge(df_summary, c, by="row.names", all.x=TRUE, sort=F)
+names(df_summary) <- c("", "Observed", "Modelled", "BiasCorrected")
+knitr::kable(df_summary, caption="**Table 2.** Summary of values")
+rm(a, b, c, df_summary)
+```
+
